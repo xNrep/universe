@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: universe-backend
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: blueprint
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_SECRET
+        generateValue: true
+      - key: ADMIN_BOOTSTRAP_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://penguinmod.com
+      - key: PGSSL
+        value: "true"
+      - key: UDBA_ENABLED
+        value: "false"

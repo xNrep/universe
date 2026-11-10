@@ -1,0 +1,2 @@
+# Rotur adapter contract
+Set ROTUR_VERIFY_URL and ROTUR_VERIFY_SECRET only after implementing a trusted server-side verifier against Rotur's actual documentation. This backend POSTs `{reference, proof, universeUserId}` with Bearer auth. The verifier must return `{valid:true,userId:<same UUID>,credits:<positive safe integer>}`. The API refuses payments when unconfigured and never trusts a client-supplied credit amount. This contract is an adapter interface, not Rotur's documented native API.

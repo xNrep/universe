@@ -1,0 +1,1 @@
+const fs=require('node:fs'),db=require('./db');(async()=>{await db.query(fs.readFileSync(__dirname+'/../migrations/001.sql','utf8'));console.log('Migration complete');await db.end()})().catch(e=>{console.error(e);process.exit(1)});
