@@ -76,7 +76,8 @@ R.post('/admin/backup', A.auth, A.admin, wrap(async (q, s) => {
       }
     }
     await client.query('COMMIT');
-    await audit(q.user.id, 'admin.backup.restore');
+    await db.query("INSERT INTO audit_logs(actor_id,action) SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE id=$1) THEN $1 ELSE NULL END, 'admin.backup.restore'", [q.user.id]);
+    await db.query("SELECT setval(pg_get_serial_sequence('audit_logs','id'), COALESCE((SELECT MAX(id) FROM audit_logs), 1), EXISTS (SELECT 1 FROM audit_logs))");
     s.json({ ok: true, restored: Object.fromEntries(BACKUP_TABLES.map(t => [t, backup.data[t].length])) });
   } catch (e) {
     await client.query('ROLLBACK');
