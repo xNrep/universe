@@ -16,7 +16,7 @@ services:
       - key: ADMIN_BOOTSTRAP_KEY
         generateValue: true
      - key: CORS_ORIGINS
-  value: https://penguinmod.com,https://studio.penguinmod.com,https://codetorch.net,https://blockcompiler.codetorch.net,https://xNrep.github.io
+       value: "*"
       - key: PGSSL
         value: "true"
       - key: UDBA_ENABLED
