@@ -26,4 +26,64 @@ R.patch('/admin/users/:id/rank',A.auth,A.admin,wrap(async(q,s)=>{if(!u.uuid(q.pa
 R.get('/admin/audit',A.auth,A.admin,wrap(async(q,s)=>{let r=await db.query('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200');s.json({logs:r.rows})}));
 R.post('/payments/rotur/verify',A.auth,wrap(async(q,s)=>{if(!c.roturUrl||!c.roturSecret)return s.status(503).json({error:'ROTUR_NOT_CONFIGURED'});let ref=u.str(q.body.reference,160),proof=u.str(q.body.proof,4000);if(!ref||!proof)return s.status(400).json({error:'REFERENCE_AND_PROOF_REQUIRED'});let r=await fetch(c.roturUrl,{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+c.roturSecret},body:JSON.stringify({reference:ref,proof,universeUserId:q.user.id})});if(!r.ok)return s.status(502).json({error:'ROTUR_PROVIDER_ERROR'});let v=await r.json();if(v.valid!==true||v.userId!==q.user.id||!Number.isSafeInteger(v.credits)||v.credits<1)return s.status(403).json({error:'ROTUR_VERIFICATION_FAILED'});await db.query("INSERT INTO credit_ledger(user_id,amount,reason,provider,provider_reference) VALUES($1,$2,'Rotur verified purchase','rotur',$3)",[q.user.id,v.credits,ref]);s.json({ok:true,creditsAdded:v.credits})}));
 R.get('/udba/status',(q,s)=>s.json({enabled:c.udba,format:'Universe-UDBA-v1'}));
+
+const BACKUP_TABLES = [
+  'users', 'sessions', 'documents', 'levels', 'worlds',
+  'assets', 'entitlements', 'credit_ledger', 'audit_logs'
+];
+R.get('/admin/backup', A.auth, A.admin, wrap(async (q, s) => {
+  const data = {};
+  for (const table of BACKUP_TABLES) {
+    const result = await db.query('SELECT * FROM ' + table + ' ORDER BY 1');
+    data[table] = result.rows;
+  }
+  await audit(q.user.id, 'admin.backup.export');
+  s.set('Cache-Control', 'no-store');
+  s.set('Content-Disposition', 'attachment; filename="universe-backup.json"');
+  s.json({
+    format: 'Universe-Backup',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    data
+  });
+}));
+R.post('/admin/backup', A.auth, A.admin, wrap(async (q, s) => {
+  const backup = q.body;
+  if (!backup || backup.format !== 'Universe-Backup' || backup.version !== 1 ||
+      backup.confirm !== 'RESTORE_UNIVERSE_BACKUP' || !backup.data ||
+      typeof backup.data !== 'object' || Array.isArray(backup.data)) {
+    return s.status(400).json({ error: 'INVALID_BACKUP_OR_CONFIRMATION' });
+  }
+  for (const table of BACKUP_TABLES) {
+    if (!Array.isArray(backup.data[table])) {
+      return s.status(400).json({ error: 'INVALID_BACKUP_TABLE', table });
+    }
+    if (backup.data[table].length > 250000) {
+      return s.status(413).json({ error: 'BACKUP_TABLE_TOO_LARGE', table });
+    }
+  }
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('TRUNCATE TABLE ' + BACKUP_TABLES.join(', ') + ' RESTART IDENTITY CASCADE');
+    for (const table of BACKUP_TABLES) {
+      const rows = backup.data[table];
+      if (rows.length) {
+        await client.query(
+          'INSERT INTO ' + table + ' SELECT * FROM jsonb_populate_recordset(NULL::' + table + ', $1::jsonb)',
+          [JSON.stringify(rows)]
+        );
+      }
+    }
+    await client.query('COMMIT');
+    await audit(q.user.id, 'admin.backup.restore');
+    s.json({ ok: true, restored: Object.fromEntries(BACKUP_TABLES.map(t => [t, backup.data[t].length])) });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}));
+
 module.exports=R;
